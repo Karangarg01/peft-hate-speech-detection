@@ -3,32 +3,34 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 from peft import LoraConfig, get_peft_model
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
+import torch
+from torch.nn import CrossEntropyLoss
 
 # 1. Load dataset
 dataset = load_dataset("civil_comments")
 
-# Reduce size (IMPORTANT for local system)
-dataset["train"] = dataset["train"].select(range(10000))
-dataset = dataset["train"].train_test_split(test_size=0.1)
+dataset["train"] = dataset["train"].select(range(50000))
 
-# 2. Load tokenizer
+dataset = dataset["train"].train_test_split(test_size=0.3)
+
+# Load tokenizer
 model_name = "distilbert-base-uncased"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-# 3. Preprocess
+# Preprocess
 def preprocess(example):
     return tokenizer(example["text"], truncation=True, padding="max_length")
 
 dataset = dataset.map(preprocess, batched=True)
 
-# 4. Create labels
+# Create labels
 def format_labels(example):
     example["label"] = int(example["toxicity"] > 0.5)
     return example
 
 dataset = dataset.map(format_labels)
 
-# 5. Load model
+# Load model
 model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 
 # 6. Apply LoRA
@@ -43,7 +45,24 @@ lora_config = LoraConfig(
 
 model = get_peft_model(model, lora_config)
 
-# 7. Metrics
+# Class weights (handle imbalance)
+import torch
+from torch.nn import CrossEntropyLoss
+
+class_weights = torch.tensor([1.0, 5.0])
+
+class CustomTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs.get("labels")
+        outputs = model(**inputs)
+        logits = outputs.get("logits")
+
+        loss_fct = CrossEntropyLoss(weight=class_weights.to(logits.device))
+        loss = loss_fct(logits, labels)
+
+        return (loss, outputs) if return_outputs else loss
+
+# Metrics
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     preds = np.argmax(logits, axis=1)
@@ -53,17 +72,19 @@ def compute_metrics(eval_pred):
         "f1": f1_score(labels, preds)
     }
 
-# 8. Training config
+# Training arguments
 training_args = TrainingArguments(
     output_dir="./results",
-    per_device_train_batch_size=8,
-    num_train_epochs=1,
+    per_device_train_batch_size=16,
+    per_device_eval_batch_size=16,
+    num_train_epochs=10,
     logging_dir="./logs",
-    learning_rate=2e-5
+    learning_rate=2e-5,
+    fp16=torch.cuda.is_available(),
+    dataloader_pin_memory=False
 )
 
-# 9. Trainer
-trainer = Trainer(
+trainer = CustomTrainer(
     model=model,
     args=training_args,
     train_dataset=dataset["train"],
@@ -71,9 +92,7 @@ trainer = Trainer(
     compute_metrics=compute_metrics
 )
 
-# 10. Train
 trainer.train()
 
-# 11. Save model
 model.save_pretrained("model")
 tokenizer.save_pretrained("model")
