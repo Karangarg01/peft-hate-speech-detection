@@ -7,7 +7,7 @@ model_path = "model"
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 model = AutoModelForSequenceClassification.from_pretrained(model_path)
 
-st.title("Hate Speech Detection (PEFT + LoRA)")
+st.title("Hate Speech Detection using PEFT")
 
 user_input = st.text_area("Enter text:")
 
