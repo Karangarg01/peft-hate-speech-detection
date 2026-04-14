@@ -1,7 +1,6 @@
 # Hate Speech Detection using Parameter-Efficient Fine-Tuning
 
-<img src="images/toxic.png" alt="Toxic comment" width="200"/>
-<img src="images/nontoxic.png" alt="Non toxic comment" width="200"/>
+<img src="Toxic.png" alt="Toxic comment" width="500"/> <img src="Non toxic.png" alt="Non toxic comment" width="500"/>
 
 
 ## Overview
